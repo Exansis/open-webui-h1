@@ -5,9 +5,8 @@ import importlib.metadata
 import pkgutil
 import chromadb
 from chromadb import Settings
-from base64 import b64encode
 from bs4 import BeautifulSoup
-from typing import TypeVar, Generic, Union
+from typing import TypeVar, Generic
 from pydantic import BaseModel
 from typing import Optional
 
@@ -19,7 +18,6 @@ import markdown
 import requests
 import shutil
 
-from secrets import token_bytes
 from constants import ERROR_MESSAGES
 
 ####################################
@@ -393,6 +391,18 @@ OAUTH_PROVIDER_NAME = PersistentConfig(
     "OAUTH_PROVIDER_NAME",
     "oauth.oidc.provider_name",
     os.environ.get("OAUTH_PROVIDER_NAME", "SSO"),
+)
+
+OAUTH_USERNAME_CLAIM = PersistentConfig(
+    "OAUTH_USERNAME_CLAIM",
+    "oauth.oidc.username_claim",
+    os.environ.get("OAUTH_USERNAME_CLAIM", "name"),
+)
+
+OAUTH_PICTURE_CLAIM = PersistentConfig(
+    "OAUTH_USERNAME_CLAIM",
+    "oauth.oidc.avatar_claim",
+    os.environ.get("OAUTH_PICTURE_CLAIM", "picture"),
 )
 
 
@@ -769,11 +779,14 @@ class BannerModel(BaseModel):
     timestamp: int
 
 
-WEBUI_BANNERS = PersistentConfig(
-    "WEBUI_BANNERS",
-    "ui.banners",
-    [BannerModel(**banner) for banner in json.loads("[]")],
-)
+try:
+    banners = json.loads(os.environ.get("WEBUI_BANNERS", "[]"))
+    banners = [BannerModel(**banner) for banner in banners]
+except Exception as e:
+    print(f"Error loading WEBUI_BANNERS: {e}")
+    banners = []
+
+WEBUI_BANNERS = PersistentConfig("WEBUI_BANNERS", "ui.banners", banners)
 
 
 SHOW_ADMIN_DETAILS = PersistentConfig(
@@ -884,6 +897,22 @@ WEBUI_SESSION_COOKIE_SECURE = os.environ.get(
 
 if WEBUI_AUTH and WEBUI_SECRET_KEY == "":
     raise ValueError(ERROR_MESSAGES.ENV_VAR_NOT_FOUND)
+
+####################################
+# RAG document content extraction
+####################################
+
+CONTENT_EXTRACTION_ENGINE = PersistentConfig(
+    "CONTENT_EXTRACTION_ENGINE",
+    "rag.CONTENT_EXTRACTION_ENGINE",
+    os.environ.get("CONTENT_EXTRACTION_ENGINE", "").lower(),
+)
+
+TIKA_SERVER_URL = PersistentConfig(
+    "TIKA_SERVER_URL",
+    "rag.tika_server_url",
+    os.getenv("TIKA_SERVER_URL", "http://tika:9998"),  # Default for sidecar deployment
+)
 
 ####################################
 # RAG

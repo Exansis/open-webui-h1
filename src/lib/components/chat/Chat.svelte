@@ -126,6 +126,35 @@
 		})();
 	}
 
+	const chatEventHandler = async (event) => {
+		if (event.chat_id === $chatId) {
+			await tick();
+			console.log(event);
+			let message = history.messages[event.message_id];
+
+			const type = event?.data?.type ?? null;
+			const data = event?.data?.data ?? null;
+
+			if (type === 'status') {
+				if (message.statusHistory) {
+					message.statusHistory.push(data);
+				} else {
+					message.statusHistory = [data];
+				}
+			} else if (type === 'citation') {
+				if (message.citations) {
+					message.citations.push(data);
+				} else {
+					message.citations = [data];
+				}
+			} else {
+				console.log('Unknown message type', data);
+			}
+
+			messages = messages;
+		}
+	};
+
 	onMount(async () => {
 		const onMessageHandler = async (event) => {
 			if (event.origin === window.origin) {
@@ -163,6 +192,8 @@
 		};
 		window.addEventListener('message', onMessageHandler);
 
+		$socket.on('chat-events', chatEventHandler);
+
 		if (!$chatId) {
 			chatId.subscribe(async (value) => {
 				if (!value) {
@@ -177,6 +208,8 @@
 
 		return () => {
 			window.removeEventListener('message', onMessageHandler);
+
+			$socket.off('chat-events');
 		};
 	});
 
@@ -302,7 +335,7 @@
 		}
 	};
 
-	const chatCompletedHandler = async (modelId, messages) => {
+	const chatCompletedHandler = async (modelId, responseMessageId, messages) => {
 		await mermaid.run({
 			querySelector: '.mermaid'
 		});
@@ -316,7 +349,9 @@
 				info: m.info ? m.info : undefined,
 				timestamp: m.timestamp
 			})),
-			chat_id: $chatId
+			chat_id: $chatId,
+			session_id: $socket?.id,
+			id: responseMessageId
 		}).catch((error) => {
 			toast.error(error);
 			messages.at(-1).error = { content: error };
@@ -665,6 +700,7 @@
 		await tick();
 
 		const [res, controller] = await generateChatCompletion(localStorage.token, {
+			stream: true,
 			model: model.id,
 			messages: messagesBody,
 			options: {
@@ -682,8 +718,9 @@
 			keep_alive: $settings.keepAlive ?? undefined,
 			tool_ids: selectedToolIds.length > 0 ? selectedToolIds : undefined,
 			files: files.length > 0 ? files : undefined,
-			citations: files.length > 0 ? true : undefined,
-			chat_id: $chatId
+			session_id: $socket?.id,
+			chat_id: $chatId,
+			id: responseMessageId
 		});
 
 		if (res && res.ok) {
@@ -704,7 +741,7 @@
 						controller.abort('User: Stop Response');
 					} else {
 						const messages = createMessagesList(responseMessageId);
-						await chatCompletedHandler(model.id, messages);
+						await chatCompletedHandler(model.id, responseMessageId, messages);
 					}
 
 					_response = responseMessage.content;
@@ -912,8 +949,8 @@
 			const [res, controller] = await generateOpenAIChatCompletion(
 				localStorage.token,
 				{
-					model: model.id,
 					stream: true,
+					model: model.id,
 					stream_options:
 						model.info?.meta?.capabilities?.usage ?? false
 							? {
@@ -983,9 +1020,9 @@
 					max_tokens: $settings?.params?.max_tokens ?? undefined,
 					tool_ids: selectedToolIds.length > 0 ? selectedToolIds : undefined,
 					files: files.length > 0 ? files : undefined,
-					citations: files.length > 0 ? true : undefined,
-
-					chat_id: $chatId
+					session_id: $socket?.id,
+					chat_id: $chatId,
+					id: responseMessageId
 				},
 				`${WEBUI_BASE_URL}/api`
 			);
@@ -1014,7 +1051,7 @@
 						} else {
 							const messages = createMessagesList(responseMessageId);
 
-							await chatCompletedHandler(model.id, messages);
+							await chatCompletedHandler(model.id, responseMessageId, messages);
 						}
 
 						_response = responseMessage.content;
